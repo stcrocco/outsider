@@ -1,7 +1,0 @@
---- 
-:state: 
-  :open_documents: 
-  - /home/stefano/documenti/programmi/global_files_installer/lib/rubygems_plugin.rb
-  - /home/stefano/documenti/programmi/global_files_installer/features/support/hooks.rb
-  - /home/stefano/documenti/programmi/global_files_installer/features/support/world.rb
-  :active_document: /home/stefano/documenti/programmi/global_files_installer/lib/rubygems_plugin.rb
