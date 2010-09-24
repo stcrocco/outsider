@@ -25,6 +25,12 @@ describe GlobalFilesInstaller::Installer do
       @temp_dir = dir
     end
     
+    it 'does nothing if the global_install_config file doesn\'t exist' do
+      dir = mkdirtree []
+      @temp_dir = dir
+      lambda{GlobalFilesInstaller::Installer.new dir}.should_not raise_error
+    end
+    
   end
   
   describe 'when installing files' do

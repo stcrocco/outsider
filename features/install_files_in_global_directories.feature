@@ -28,8 +28,6 @@ Feature: install files in global directories I have write access to
     When I run the gem command
     Then the files should be installed in directories obtained evaluating the ERB tags
   
-  Scenario: The global_install_config file wants to install files in a directory which doesn't exist
-  
   Scenario: The global_install_config file wants to install files which don't exist
     Given a global_install_config YAML file with:
       """
@@ -39,3 +37,5 @@ Feature: install files in global directories I have write access to
     And that file1 doesn't exist in the gem directory
     When I run the gem command
     Then only the existing files should be installed
+    
+  Scenario: The global_install_config file wants to install files in a directory which doesn't exist

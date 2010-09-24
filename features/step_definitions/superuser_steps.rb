@@ -1,17 +1,22 @@
 require 'tempfile'
 
 Given /^there's no global_install_config file in the current directory$/ do                                                                                                                               
-  pending
   @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec]', {'global_install_test.gemspec' => gemspec(['test.rb'])}
   @gem_file = build_gem @gem_dir
+  @tmp_contents = Dir.entries(Dir.tmpdir).sort
+  @log_file = File.join(Dir.tmpdir, random_string)
+  @gem_command = "gem install #{@gem_file} 2>#{@log_file}"
 end
 
-When /^I run the gem command$/ do                                                                                                                                                                         
-  `gem install #{@gem_file}`
+When /^I run the gem command$/ do
+  gem_command = defined?(@gem_command) ? @gem_command : "gem install #{@gem_file}"
+  `#{gem_command}`
 end                                                                                                                                                                                                       
 
-Then /^nothing should be installed$/ do                                                                                                                                                                   
-  pending # express the regexp above with the code you wish you had                                                                                                                                       
+Then /^nothing should be done/ do                                   
+  (Dir.entries(Dir.tmpdir)-[File.basename(@log_file)]).sort.should == @tmp_contents
+  log = File.read(@log_file)
+  log.should be_empty
 end                                                                                                                                                                                                       
 
 Then /^no messages should be shown$/ do                                                                                                                                                                   

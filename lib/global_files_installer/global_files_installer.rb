@@ -12,7 +12,11 @@ module GlobalFilesInstaller
 # files to install
     def initialize dir
       @dir = dir
-      @data = YAML.load File.read(File.join(dir, 'global_install_config') )
+      @data = begin 
+        YAML.load File.read(File.join(dir, 'global_install_config') )
+      rescue SystemCallError
+        {}
+      end
     end
     
 # Installs the files according to the instructions in the global_install_config
