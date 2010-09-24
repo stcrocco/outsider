@@ -1,0 +1,17 @@
+--- 
+:general: 
+  :project_name: global_install_files
+  :project_files: 
+    :include: []
+
+    :exclude: []
+
+    :extensions: 
+    - "*.rb"
+    - "*.feature"
+    - "*.gemspec"
+:rspec: 
+  :ruby_options: []
+
+:ruby: 
+  :main_program: bin/global_install_files
