@@ -36,18 +36,55 @@ describe GlobalFilesInstaller::Installer do
       end
     end
     
-    it 'installs the files in the directory passed to the constructor to the paths specified in the global_install_config file' do
+    context 'The global_install_config file doesn\'t contain ERB tags' do
+      
+      it 'installs the files in the given directories' do
+        tree = %w[global_install_config file1 file2]
+        @files_to_install = {
+          'file1' => File.join(Dir.tmpdir, 'file1'),
+          'file2' => File.join(Dir.tmpdir, 'file2')
+        }
+        @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => YAML.dump(@files_to_install)
+        inst = GlobalFilesInstaller::Installer.new @temp_dir
+        inst.install_files
+        File.should exist(@files_to_install['file1'])
+        File.should exist(@files_to_install['file2'])
+      end
+      
+    end
+    
+    context 'The global_install_config file contains ERB tags' do
+      
+      it 'installs the files in the directories obtained by evaluating the ERB tags' do
+        tree = %w[global_install_config file1 file2]
+        @files_to_install = {
+          'file1' => File.join(Dir.tmpdir, 'file1'),
+          'file2' => File.join(Dir.tmpdir, 'file2')
+        }
+        global_install_config = <<-EOS
+file1: <%= require 'tempfile';File.join Dir.tmpdir, 'file1' %>
+file2: /tmp/file2
+        EOS
+        @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => global_install_config
+        inst = GlobalFilesInstaller::Installer.new @temp_dir
+        inst.install_files
+        File.should exist(@files_to_install['file1'])
+        File.should exist(@files_to_install['file2'])
+      end
+      
+    end
+    
+    it 'skips files which do not exist in the gem directory' do
       tree = %w[global_install_config file1 file2]
       @files_to_install = {
         'file1' => File.join(Dir.tmpdir, 'file1'),
         'file2' => File.join(Dir.tmpdir, 'file2')
       }
-      @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => YAML.dump(@files_to_install)
+      @temp_dir = mkdirtree %w[global_install_config file2], 'global_install_config' => YAML.dump(@files_to_install)
+      @files_to_install.delete 'file1'
       inst = GlobalFilesInstaller::Installer.new @temp_dir
-      inst.install_files
-      File.should exist(@files_to_install['file1'])
+      lambda{inst.install_files}.should_not raise_error
       File.should exist(@files_to_install['file2'])
-#       File.exist? @files_to_install['file1']
     end
     
   end

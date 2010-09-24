@@ -11,7 +11,7 @@ Feature: install files in global directories I have write access to
   Scenario: A global_install_config file exists in the current directory but it's empty
   
   Scenario: The global_install_config file only wants to install files in fixed directories
-    Given a global_install_config YAML file containing not containing ERB tags:
+    Given a global_install_config YAML file not containing ERB tags:
       """
       file1.desktop: /tmp/file1.desktop
       file2.desktop: /tmp/file2.desktop
@@ -20,7 +20,22 @@ Feature: install files in global directories I have write access to
     Then the files should be installed in the given directories
   
   Scenario: The global_install_config file wants to install files in directories determined at runtime
+    Given a global_install_config YAML file containing ERB tags:
+      """
+      file1: <%= require 'tempfile';File.join Dir.tmpdir, 'file1' %>
+      file2: /tmp/file2
+      """
+    When I run the gem command
+    Then the files should be installed in directories obtained evaluating the ERB tags
   
   Scenario: The global_install_config file wants to install files in a directory which doesn't exist
   
   Scenario: The global_install_config file wants to install files which don't exist
+    Given a global_install_config YAML file with:
+      """
+      file1: /tmp/file1
+      file2: /tmp/file2
+      """
+    And that file1 doesn't exist in the gem directory
+    When I run the gem command
+    Then only the existing files should be installed

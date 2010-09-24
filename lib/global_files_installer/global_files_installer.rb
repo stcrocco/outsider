@@ -1,5 +1,6 @@
 require 'yaml'
 require 'fileutils'
+require 'erb'
 
 module GlobalFilesInstaller
   
@@ -18,7 +19,9 @@ module GlobalFilesInstaller
 # file
     def install_files
       @data.each_pair do |k, v|
-        FileUtils.cp File.join(@dir, k), v
+        dest = ERB.new(v).result
+        file = File.join(@dir, k)
+        FileUtils.cp file, dest if File.exist? file
       end
     end
     
