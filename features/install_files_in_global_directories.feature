@@ -39,3 +39,10 @@ Feature: install files in global directories I have write access to
     Then only the existing files should be installed
     
   Scenario: The global_install_config file wants to install files in a directory which doesn't exist
+    Given a global_install_config YAML file containing nonexisting directories:
+      """
+      file1: /tmp/global_files_installer_testdir1/subdir/file1
+      file2: /tmp/file2
+      """
+    When I run the gem command
+    Then the needed directories should be created with default permissions

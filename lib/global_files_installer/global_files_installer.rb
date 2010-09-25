@@ -1,6 +1,7 @@
 require 'yaml'
 require 'fileutils'
 require 'erb'
+require 'pathname'
 
 module GlobalFilesInstaller
   
@@ -25,7 +26,21 @@ module GlobalFilesInstaller
       @data.each_pair do |k, v|
         dest = ERB.new(v).result
         file = File.join(@dir, k)
-        FileUtils.cp file, dest if File.exist? file
+        if File.exist? file
+          begin FileUtils.cp file, dest
+          rescue SystemCallError
+            path = Pathname.new dest
+            path.descend do |pth|
+              if pth.exist? then next
+              elsif pth == path
+                FileUtils.cp file, dest
+              else
+                FileUtils.mkdir pth.to_s
+                FileUtils.chmod 0700, pth.to_s
+              end
+            end
+          end
+        end
       end
     end
     

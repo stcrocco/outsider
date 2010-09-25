@@ -81,3 +81,20 @@ Then /^only the existing files should be installed$/ do
     end
   end
 end
+
+Given /^a global_install_config YAML file containing nonexisting directories:$/ do |text|                                                                                                               
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1 file2 global_install_config]), 'global_install_config' => text}
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1, file2, global_install_config]', contents
+  @gem_file = build_gem @gem_dir
+  @files_to_install = YAML.load(text)
+  @files_to_remove = @files_to_install.entries
+  FileUtils.rm_rf '/tmp/global_files_installer_testdir1'
+end                                                                                                                                                                                                       
+
+Then /^the needed directories should be created with default permissions$/ do                                                                                                                             
+  @files_to_install.each_pair do |rel, abs|
+    File.should exist(abs)
+  end
+  File::Stat.new('/tmp/global_files_installer_testdir1').mode.to_s(8)[-3..-1].should == '700'
+  File::Stat.new('/tmp/global_files_installer_testdir1/subdir').mode.to_s(8)[-3..-1].should == '700'
+end

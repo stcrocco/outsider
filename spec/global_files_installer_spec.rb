@@ -38,7 +38,7 @@ describe GlobalFilesInstaller::Installer do
     after do
       if defined? @files_to_install
         @files_to_install = @files_to_install.values if @files_to_install.is_a? Hash
-        @files_to_install.each{|f| FileUtils.rm_f f}
+        @files_to_install.each{|f| FileUtils.rm_rf f}
       end
     end
     
@@ -81,7 +81,7 @@ file2: /tmp/file2
     end
     
     it 'skips files which do not exist in the gem directory' do
-      tree = %w[global_install_config file1 file2]
+#       tree = %w[global_install_config file1 file2]
       @files_to_install = {
         'file1' => File.join(Dir.tmpdir, 'file1'),
         'file2' => File.join(Dir.tmpdir, 'file2')
@@ -93,6 +93,29 @@ file2: /tmp/file2
       File.should exist(@files_to_install['file2'])
     end
     
+    it 'creates any needed directories with default permissions' do
+#       tree = %w[global_install_config file1 file2]
+      missing_dir = random_string
+      missing_dir_full = File.join(Dir.tmpdir, missing_dir)
+      missing_subdir = random_string
+      missing_subdir_full = File.join missing_dir_full, missing_subdir
+      @files_to_install = {
+        'file1' => File.join(missing_subdir_full, 'file1'),
+        'file2' => File.join(Dir.tmpdir, 'file2')
+      }
+      @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => YAML.dump(@files_to_install)
+      inst = GlobalFilesInstaller::Installer.new @temp_dir
+      inst.install_files
+      @files_to_install.each_value do |dest|
+        File.should exist(dest)
+      end
+      @files_to_install = @files_to_install.values + [missing_dir_full]
+      File.should be_directory(missing_dir_full)
+      File::Stat.new(missing_dir_full).mode.to_s(8)[-3..-1].should == '700'
+      File.should be_directory(missing_subdir_full)
+      File::Stat.new(missing_subdir_full).mode.to_s(8)[-3..-1].should == '700'
+    end
+
   end
   
 end
