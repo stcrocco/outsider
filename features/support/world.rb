@@ -4,7 +4,7 @@ module GlobalInstallFeatures
   
 # Returs the code which should be written in a gemspec file for a gem containing
 # the file _files_
-  def gemspec files = ['global_install_config'], data = {}
+  def gemspec files = ['outsider_files'], data = {}
     data = {:version => '0.0.1', :name => 'global_install_test'}.merge data
     <<-EOS
       Gem::Specification.new do |s|
@@ -36,8 +36,9 @@ end
 
 $gem_home = File.join Dir.tmpdir, random_string
 ENV['GEM_HOME'] = $gem_home
+ENV['OUTSIDER_RECORD_FILE'] = tmpfile random_string
 puts "Building global_install gem"
-`gem build global_install_files.gemspec`
+`gem build outsider.gemspec`
 puts "Installing global_install gem to #$gem_home"
 gem = Dir.entries('.').find{|f| File.extname(f) == '.gem'}
 `gem install #{gem}`

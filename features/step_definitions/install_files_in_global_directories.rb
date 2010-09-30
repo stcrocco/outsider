@@ -1,6 +1,6 @@
 require 'tempfile'
 
-Given /^there's no global_install_config file in the current directory$/ do                                                                                                                               
+Given /^there's no outsider_files file in the current directory$/ do                                                                                                                               
   @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec]', {'global_install_test.gemspec' => gemspec(['test.rb'])}
   @gem_file = build_gem @gem_dir
   @tmp_contents = Dir.entries(Dir.tmpdir).sort
@@ -19,23 +19,23 @@ Then /^nothing should be done/ do
   log.should be_empty
 end                                                                                                                                                                                                       
 
-Given /^an empty global_install_config file$/ do                                                                                                                                                          
-  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb global_install_config])}
-  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, global_install_config]', contents
+Given /^an empty outsider_files file$/ do                                                                                                                                                          
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb outsider_files])}
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, outsider_files]', contents
   @gem_file = build_gem @gem_dir
   @tmp_contents = Dir.entries(Dir.tmpdir).sort
   @log_file = File.join(Dir.tmpdir, random_string)
   @gem_command = "gem install #{@gem_file} 2>#{@log_file}"
 end        
 
-Given /^a global_install_config YAML file not containing ERB tags:$/ do |string|       
+Given /^a outsider_files YAML file not containing ERB tags:$/ do |string|       
   ENV['GEM_HOME'] = $gem_home
   @installed_file_contents = {
     'file1.desktop' => '1',
     'file2.desktop' => '2'
     }
-  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1.desktop file2.desktop global_install_config]), 'global_install_config' => string}.merge @installed_file_contents
-  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1.desktop, file2.desktop, global_install_config]', contents
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1.desktop file2.desktop outsider_files]), 'outsider_files' => string}.merge @installed_file_contents
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1.desktop, file2.desktop, outsider_files]', contents
   @gem_file = build_gem @gem_dir
   @files_to_install = YAML.load(string)
   @files_to_remove = @files_to_install.entries
@@ -48,14 +48,14 @@ Then /^the files should be installed in the given directories$/ do
   end
 end              
 
-Given /^a global_install_config YAML file containing ERB tags:$/ do |string|                                                                                                                              
+Given /^a outsider_files YAML file containing ERB tags:$/ do |string|                                                                                                                              
   ENV['GEM_HOME'] = $gem_home
   @installed_file_contents = {
     'file1' => '1',
     'file2' => '2'
   }
-  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1 file2 global_install_config]), 'global_install_config' => string}.merge @installed_file_contents
-  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1, file2, global_install_config]', contents
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1 file2 outsider_files]), 'outsider_files' => string}.merge @installed_file_contents
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1, file2, outsider_files]', contents
   @gem_file = build_gem @gem_dir
   @files_to_install = {
     'file1' => File.join(Dir.tmpdir, 'file1'),
@@ -68,9 +68,9 @@ Then /^the files should be installed in directories obtained evaluating the ERB 
   Then 'the files should be installed in the given directories'
 end
 
-Given /^a global_install_config YAML file with:$/ do |text|
-  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file2 global_install_config]), 'global_install_config' => text}
-  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file2, global_install_config]', contents
+Given /^a outsider_files YAML file with:$/ do |text|
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file2 outsider_files]), 'outsider_files' => text}
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file2, outsider_files]', contents
   @gem_file = build_gem @gem_dir
   @files_to_install = YAML.load(text)
   @files_to_remove = @files_to_install.entries
@@ -87,13 +87,13 @@ Then /^only the existing files should be installed$/ do
   end
 end
 
-Given /^a global_install_config YAML file containing nonexisting directories:$/ do |text|                                                                                                               
-  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1 file2 global_install_config]), 'global_install_config' => text}
-  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1, file2, global_install_config]', contents
+Given /^a outsider_files YAML file containing nonexisting directories:$/ do |text|                                                                                                               
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb file1 file2 outsider_files]), 'outsider_files' => text}
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, file1, file2, outsider_files]', contents
   @gem_file = build_gem @gem_dir
   @files_to_install = YAML.load(text)
   @files_to_remove = @files_to_install.entries
-  FileUtils.rm_rf '/tmp/global_files_installer_testdir1'
+  FileUtils.rm_rf '/tmp/outsider_testdir1'
 end                                                                                                                                                                                                       
 
 Then /^the needed directories should be created with default permissions$/ do                                                   

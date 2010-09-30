@@ -2,9 +2,9 @@ require 'fileutils'
 require 'tempfile'
 
 require './spec/utils'
-require 'global_files_installer/global_files_installer'
+require 'outsider/outsider'
 
-describe GlobalFilesInstaller::Installer do
+describe Outsider::Installer do
   
   def install_files_list *files
     res = files.inject({}) do |res, f|
@@ -16,14 +16,14 @@ describe GlobalFilesInstaller::Installer do
     end
   end
 
-  def make_gem_dir to_install, global_install_config = nil, base_dir = nil
+  def make_gem_dir to_install, outsider_files = nil, base_dir = nil
     if to_install.is_a? Hash
-      global_install_config ||= YAML.dump(to_install)
+      outsider_files ||= YAML.dump(to_install)
       to_install = to_install.keys
     end
     if base_dir
-      mkdirtree ['global_install_config'] + to_install, {'global_install_config' => global_install_config}, base_dir
-    else mkdirtree ['global_install_config'] + to_install, 'global_install_config' => global_install_config
+      mkdirtree ['outsider_files'] + to_install, {'outsider_files' => outsider_files}, base_dir
+    else mkdirtree ['outsider_files'] + to_install, 'outsider_files' => outsider_files
     end
   end
   
@@ -72,12 +72,12 @@ describe GlobalFilesInstaller::Installer do
   end
   
   before do
-    ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] = tmpfile 'global_files_installer_record.yaml'
+    ENV["OUTSIDER_RECORD_FILE"] = tmpfile 'outsider_record.yaml'
   end
   
   describe 'when created' do
     
-    it 'scans the directory given as argument for a YAML file called global_install_config and loads it' do
+    it 'scans the directory given as argument for a YAML file called outsider_files and loads it' do
       exp = {
         'file1' => '/path/to/file1',
         'file2' => '/path/to/file2',
@@ -85,23 +85,23 @@ describe GlobalFilesInstaller::Installer do
       }
       
       yaml = YAML.dump exp
-      dir = mkdirtree ['global_install_config'], 'global_install_config' => yaml
-      inst = GlobalFilesInstaller::Installer.new dir
+      dir = mkdirtree ['outsider_files'], 'outsider_files' => yaml
+      inst = Outsider::Installer.new dir
       inst.instance_variable_get(:@data).should == exp
       @gem_dir = dir
     end
     
-    it 'does nothing if the global_install_config file doesn\'t exist' do
+    it 'does nothing if the outsider_files file doesn\'t exist' do
       dir = mkdirtree []
       @gem_dir = dir
-      lambda{GlobalFilesInstaller::Installer.new dir}.should_not raise_error
+      lambda{Outsider::Installer.new dir}.should_not raise_error
     end
     
-    it 'does nothing if the global_install_config file is empty' do
-      dir = mkdirtree ['global_install_config']
+    it 'does nothing if the outsider_files file is empty' do
+      dir = mkdirtree ['outsider_files']
       @gem_dir = dir
       inst = nil
-      lambda{inst = GlobalFilesInstaller::Installer.new dir}.should_not raise_error
+      lambda{inst = Outsider::Installer.new dir}.should_not raise_error
       inst.instance_variable_get(:@data).should == {}
     end
     
@@ -129,28 +129,28 @@ describe GlobalFilesInstaller::Installer do
       end
     end
     
-    context 'The global_install_config file doesn\'t contain ERB tags' do    
+    context 'The outsider_files file doesn\'t contain ERB tags' do    
       
       it 'installs the files in the given directories' do
         @files_to_install = install_files_list 'file1', 'file2'
         @gem_dir = make_gem_dir @files_to_install
-        inst = GlobalFilesInstaller::Installer.new @gem_dir
+        inst = Outsider::Installer.new @gem_dir
         inst.install_files
         inst.should have_installed @files_to_install
       end
       
     end
     
-    context 'The global_install_config file contains ERB tags' do
+    context 'The outsider_files file contains ERB tags' do
       
       it 'installs the files in the directories obtained by evaluating the ERB tags' do
         @files_to_install = install_files_list 'file1', 'file2'
-        global_install_config = <<-EOS
+        outsider_files = <<-EOS
 file1: <%= require 'tempfile';File.join Dir.tmpdir, 'file1' %>
 file2: /tmp/file2
         EOS
-        @gem_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => global_install_config
-        inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @gem_dir = mkdirtree %w[outsider_files file1 file2], 'outsider_files' => outsider_files
+        inst = Outsider::Installer.new @gem_dir
         inst.install_files
         inst.should have_installed(@files_to_install)
       end
@@ -163,7 +163,7 @@ file2: /tmp/file2
         data = {'file1' => %w[/tmp/file1 /other/path/file1]}
         @files_to_install = {'file1' => '/tmp/file1'}
         @gem_dir = make_gem_dir @files_to_install, YAML.dump(@files_to_install)
-        inst = GlobalFilesInstaller::Installer.new @gem_dir
+        inst = Outsider::Installer.new @gem_dir
         inst.install_files
         inst.should have_installed(@files_to_install)
       end
@@ -172,9 +172,9 @@ file2: /tmp/file2
     
     it 'skips files which do not exist in the gem directory' do
       @files_to_install = install_files_list 'file1'
-      global_install_config = YAML.dump(@files_to_install.merge({'file1' => '/tmp/file1'}))
-      @gem_dir = make_gem_dir @files_to_install, global_install_config
-      inst = GlobalFilesInstaller::Installer.new @gem_dir
+      outsider_files = YAML.dump(@files_to_install.merge({'file1' => '/tmp/file1'}))
+      @gem_dir = make_gem_dir @files_to_install, outsider_files
+      inst = Outsider::Installer.new @gem_dir
       lambda{inst.install_files}.should_not raise_error
       inst.should have_installed(@files_to_install)
     end
@@ -187,7 +187,7 @@ file2: /tmp/file2
         'file2' => tmpfile('file2')
       }
       @gem_dir = make_gem_dir @files_to_install
-      inst = GlobalFilesInstaller::Installer.new @gem_dir
+      inst = Outsider::Installer.new @gem_dir
       inst.install_files
       installed = @files_to_install
       # We have to add the missing_dir_full to the @files_to_install variable so
@@ -200,7 +200,7 @@ file2: /tmp/file2
     it 'calls the #record_installed_files method' do
       @files_to_install = install_files_list 'file1', 'file2'
       @gem_dir = make_gem_dir @files_to_install
-      inst = GlobalFilesInstaller::Installer.new @gem_dir
+      inst = Outsider::Installer.new @gem_dir
       exp = @files_to_install.inject([]) do |res, data|
         res << [File.join(@gem_dir, data[0]), data[1]]
       end
@@ -225,7 +225,7 @@ file2: /tmp/file2
         it 'installs the file in the second entry of the array (relative to the user\'s home directory) if that entry is a relative path' do
           @files_to_install = [File.join(@home, 'destination/path/file1')]
           @gem_dir = make_gem_dir ['file1'], YAML.dump('file1' => %w[/usr/some/path/file1 destination/path/file1]), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -233,7 +233,7 @@ file2: /tmp/file2
         it 'installs the file in the second entry of the array if that entry is an absolute path' do
           @files_to_install = [File.join(@home, 'destination/path/file1')]
           @gem_dir = make_gem_dir ['file1'], YAML.dump('file1' => %W[/usr/some/path/file1 #{File.join @home, 'destination/path/file1'}]), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -247,7 +247,7 @@ file2: /tmp/file2
           @files_to_install = %w[.local/share/file1 .local/share/file2].map{|f| File.join @home, f}
           config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
           @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -257,7 +257,7 @@ file2: /tmp/file2
           @files_to_install = @original_dest.map{|f| File.join @home, 'bin', File.basename(f)}
           config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
           @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -267,7 +267,7 @@ file2: /tmp/file2
           @files_to_install = @original_dest.map{|f| File.join @home, File.basename(f)}
           config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
           @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -277,7 +277,7 @@ file2: /tmp/file2
           @files_to_install = @original_dest.map{|f| File.join @home, f}
           config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
           @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -292,7 +292,7 @@ file2: /tmp/file2
             'file4' => ['/usr/file4', '<%=ENV["HOME"]%>/file4' ]
             }
           @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
-          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst = Outsider::Installer.new @gem_dir
           inst.install_files
           inst.should have_installed @files_to_install
         end
@@ -314,10 +314,10 @@ file2: /tmp/file2
     before do
       @record_file = tmpfile random_string
       FileUtils.rm_f @record_file #ensure the file doesn't exist
-      ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] = @record_file
+      ENV["OUTSIDER_RECORD_FILE"] = @record_file
       
       make_fake_gem
-      @inst = GlobalFilesInstaller::Installer.new @gem_dir
+      @inst = Outsider::Installer.new @gem_dir
       @files = %w[file1 file2].map{|f| tmpfile f}
       @install_map = make_install_map @files
     end
@@ -327,10 +327,10 @@ file2: /tmp/file2
       FileUtils.rm_rf @gem_dir
     end
 
-    context 'The file ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] doesn\'t exist' do
+    context 'The file ENV["OUTSIDER_RECORD_FILE"] doesn\'t exist' do
       
       it 'creates the record file file and write a hash of the files sorted by gems and one of the gems sorted by file in YAML format' do
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst = Outsider::Installer.new @gem_dir
         @inst.send :record_installed_files, @files.map{|f| [File.basename(f), f]}
         exp = create_record @gem_dir => %w[file1 file2]
         YAML.load(File.read(@record_file)).should == exp
@@ -338,7 +338,7 @@ file2: /tmp/file2
         
     end
     
-    context 'The file ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] already exists' do
+    context 'The file ENV["OUTSIDER_RECORD_FILE"] already exists' do
       
       context 'and it\'s a valid record file' do
         
@@ -437,18 +437,18 @@ file2: /tmp/file2
       
     end
     
-    context 'when the GLOBAL_FILES_INSTALLER_RECORD_FILE environment variable isn\'t set' do
+    context 'when the OUTSIDER_RECORD_FILE environment variable isn\'t set' do
       
       before do
-        ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = nil
-        @default_record_file = '/var/lib/global_files_installer/installed_files'
+        ENV['OUTSIDER_RECORD_FILE'] = nil
+        @default_record_file = '/var/lib/outsider/installed_files'
       end
       
-      it 'uses the value stored in the /etc/global_files_installer.conf file, if it exists' do
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+      it 'uses the value stored in the /etc/outsider.conf file, if it exists' do
+        @inst = Outsider::Installer.new @gem_dir
         @record_file = tmpfile random_string
-        File.should_receive(:exist?).with('/etc/global_files_installer.conf').once.and_return true
-        File.should_receive(:read).with('/etc/global_files_installer.conf').once.and_return @record_file
+        File.should_receive(:exist?).with('/etc/outsider.conf').once.and_return true
+        File.should_receive(:read).with('/etc/outsider.conf').once.and_return @record_file
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
         File.should_receive(:read).with(@record_file).once.and_return YAML.dump({})
@@ -459,40 +459,40 @@ file2: /tmp/file2
         file.close
       end
     
-      it 'uses /var/lib/global_files_installer/installed_files as default record file if the /etc/global_files_installer.conf file doesn\'t exist' do
-        File.should_receive(:exist?).with('/etc/global_files_installer.conf').and_return(false)
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+      it 'uses /var/lib/outsider/installed_files as default record file if the /etc/outsider.conf file doesn\'t exist' do
+        File.should_receive(:exist?).with('/etc/outsider.conf').and_return(false)
+        @inst = Outsider::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
         File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
         file = File.open(mock_file_name, 'w')
         File.should_receive(:open).with(@default_record_file, 'w').once
-        File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return true
+        File.should_receive(:directory?).with('/var/lib/outsider').once.and_return true
         @inst.send :record_installed_files, @install_map
         file.close
       end
       
-      it 'uses /var/lib/global_files_installer/installed_files as default record file if the /etc/global_files_installer.conf file is empty' do
+      it 'uses /var/lib/outsider/installed_files as default record file if the /etc/outsider.conf file is empty' do
 
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst = Outsider::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
         File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
         file = File.open(mock_file_name, 'w')
         File.should_receive(:open).with(@default_record_file, 'w').once
-        File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return true
-        File.should_receive(:exist?).with('/etc/global_files_installer.conf').and_return(true)
-        File.should_receive(:read).with('/etc/global_files_installer.conf').once.and_return ''
+        File.should_receive(:directory?).with('/var/lib/outsider').once.and_return true
+        File.should_receive(:exist?).with('/etc/outsider.conf').and_return(true)
+        File.should_receive(:read).with('/etc/outsider.conf').once.and_return ''
         @inst.send :record_installed_files, @install_map
         file.close
       end
       
       it 'creates any missing directories in the path ' do
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst = Outsider::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
-        File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return false
-        FileUtils.should_receive(:mkdir_p).with('/var/lib/global_files_installer').once
+        File.should_receive(:directory?).with('/var/lib/outsider').once.and_return false
+        FileUtils.should_receive(:mkdir_p).with('/var/lib/outsider').once
         File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
         file = File.open(mock_file_name, 'w')
         File.should_receive(:open).with(@default_record_file, 'w').once
@@ -506,20 +506,20 @@ file2: /tmp/file2
       
       before do
         @home = tmpfile random_string
-        ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = nil
+        ENV['OUTSIDER_RECORD_FILE'] = nil
         ENV['HOME'] = @home
         FileUtils.rm_rf @home
         FileUtils.mkdir @home
-        @default_record_file = "#{ENV['HOME']}/.global_files_installer/installed_files"
+        @default_record_file = "#{ENV['HOME']}/.outsider/installed_files"
       end
       
       after do
         FileUtils.rm_rf @home
       end
       
-      it 'uses ENV["HOME"]/.global_files_installer/installed_files as record file if the GLOBAL_FILES_INSTALLER_RECORD_FILE environment variable is not set' do
+      it 'uses ENV["HOME"]/.outsider/installed_files as record file if the OUTSIDER_RECORD_FILE environment variable is not set' do
         make_fake_gem File.join( @home, random_string + '-1.2.3')
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst = Outsider::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
         File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
@@ -530,10 +530,10 @@ file2: /tmp/file2
         file.close
       end
       
-      it 'uses ENV["HOME"]/.global_files_installer/installed_files as record file even if the GLOBAL_FILES_INSTALLER_RECORD_FILE environment variable is set' do
-        ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = tmpfile random_string
+      it 'uses ENV["HOME"]/.outsider/installed_files as record file even if the OUTSIDER_RECORD_FILE environment variable is set' do
+        ENV['OUTSIDER_RECORD_FILE'] = tmpfile random_string
         make_fake_gem File.join( @home, random_string + '-1.2.3')
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst = Outsider::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
         File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
@@ -544,12 +544,12 @@ file2: /tmp/file2
         file.close
       end
       
-      it 'doesn\'t attempt to read /etc/global_files_installer.conf' do
+      it 'doesn\'t attempt to read /etc/outsider.conf' do
         make_fake_gem File.join( @home, random_string + '-1.2.3')
-        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst = Outsider::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
-        File.should_receive(:exist?).with('/etc/global_files_installer.conf').never
+        File.should_receive(:exist?).with('/etc/outsider.conf').never
         File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
         file = File.open(mock_file_name, 'w')
         File.should_receive(:open).with(@default_record_file, 'w').once
@@ -605,10 +605,10 @@ file2: /tmp/file2
     before do
       @record_file = tmpfile random_string
       FileUtils.rm_f @record_file #ensure the file doesn't exist
-      ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] = @record_file
+      ENV["OUTSIDER_RECORD_FILE"] = @record_file
       
       make_fake_gem
-      @inst = GlobalFilesInstaller::Installer.new @gem_dir
+      @inst = Outsider::Installer.new @gem_dir
       @files = %w[file1 file2].map{|f| tmpfile f}
       @install_map = make_install_map @files
     end
