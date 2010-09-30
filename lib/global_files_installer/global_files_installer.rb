@@ -46,7 +46,7 @@ module GlobalFilesInstaller
         orig = File.join(@gem_dir, k)
         installed_files << [orig, dest] if install_file orig, dest
       end
-      record_installed_files installed_files
+      record_installed_files installed_files unless installed_files.empty?
       nil
     end
     

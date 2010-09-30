@@ -2,7 +2,7 @@ Feature: install files in global directories I have write access to
   In order to have files globally availlable
   As a user
   I want to install files in a directory outside $GEM_HOME I have write access to
-  
+
   Scenario: No global_install_config file exists in the current directory
     Given there's no global_install_config file in the current directory
     When I run the gem command
