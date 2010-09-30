@@ -9,6 +9,9 @@ Feature: install files in global directories I have write access to
     Then nothing should be done
   
   Scenario: A global_install_config file exists in the current directory but it's empty
+    Given an empty global_install_config file
+    When I run the gem command
+    Then nothing should be done
   
   Scenario: The global_install_config file only wants to install files in fixed directories
     Given a global_install_config YAML file not containing ERB tags:
@@ -39,6 +42,15 @@ Feature: install files in global directories I have write access to
     Then only the existing files should be installed
     
   Scenario: The global_install_config file wants to install files in a directory which doesn't exist
+    Given a global_install_config YAML file containing nonexisting directories:
+      """
+      file1: /tmp/global_files_installer_testdir1/subdir/file1
+      file2: /tmp/file2
+      """
+    When I run the gem command
+    Then the needed directories should be created with default permissions
+    
+  Scenario: The global_install_config file wants to install files in a directory which doesn't exist specifying permissions for the path
     Given a global_install_config YAML file containing nonexisting directories:
       """
       file1: /tmp/global_files_installer_testdir1/subdir/file1

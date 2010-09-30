@@ -4,12 +4,13 @@ module GlobalInstallFeatures
   
 # Returs the code which should be written in a gemspec file for a gem containing
 # the file _files_
-  def gemspec files = ['global_install_config']
+  def gemspec files = ['global_install_config'], data = {}
+    data = {:version => '0.0.1', :name => 'global_install_test'}.merge data
     <<-EOS
       Gem::Specification.new do |s|
-        s.name = 'global_install_test'
+        s.name = #{data[:name].inspect}
         s.summary = 'a gem used to test the global_install gem'
-        s.version = '0.0.0'
+        s.version = #{data[:version].inspect}
         s.files = #{files.inspect}
       end
     EOS
@@ -18,10 +19,14 @@ module GlobalInstallFeatures
 # Builds a gem from the gemspec _file_ in the directory _dir_. The gem file will
 # be created in _dir_
 # 
+# _options_ controls the amount of output from the `gem build` command. If the 
+# :backtrace entry is *true* then the --bactrace option will be passed to gem. If
+# :warnings is true, then messages written to standard error will be displayed
+# 
 # Returns the name of the gem file
-  def build_gem dir, file = 'global_install_test.gemspec'
+  def build_gem dir, file = 'global_install_test.gemspec', options = {}
     gem_file = Dir.chdir(dir) do
-      `gem build #{file} 2>/dev/null`
+      `gem build #{options[:backtrace] ? '--backtrace ' : ''}#{file}#{options[:warnings] ? ' 2>/dev/null' : ''}`
       Dir.entries('.').find{|f| File.extname(f) == '.gem'}
     end
     File.join dir, gem_file

@@ -19,9 +19,14 @@ Then /^nothing should be done/ do
   log.should be_empty
 end                                                                                                                                                                                                       
 
-Then /^no messages should be shown$/ do                                                                                                                                                                   
-  pending # express the regexp above with the code you wish you had                                                                                                                                       
-end                             
+Given /^an empty global_install_config file$/ do                                                                                                                                                          
+  contents = {'global_install_test.gemspec' => gemspec(%w[test.rb global_install_config])}
+  @gem_dir = mkdirtree '[test.rb, global_install_test.gemspec, global_install_config]', contents
+  @gem_file = build_gem @gem_dir
+  @tmp_contents = Dir.entries(Dir.tmpdir).sort
+  @log_file = File.join(Dir.tmpdir, random_string)
+  @gem_command = "gem install #{@gem_file} 2>#{@log_file}"
+end        
 
 Given /^a global_install_config YAML file not containing ERB tags:$/ do |string|       
   ENV['GEM_HOME'] = $gem_home
@@ -91,10 +96,8 @@ Given /^a global_install_config YAML file containing nonexisting directories:$/ 
   FileUtils.rm_rf '/tmp/global_files_installer_testdir1'
 end                                                                                                                                                                                                       
 
-Then /^the needed directories should be created with default permissions$/ do                                                                                                                             
+Then /^the needed directories should be created with default permissions$/ do                                                   
   @files_to_install.each_pair do |rel, abs|
     File.should exist(abs)
   end
-  File::Stat.new('/tmp/global_files_installer_testdir1').mode.to_s(8)[-3..-1].should == '700'
-  File::Stat.new('/tmp/global_files_installer_testdir1/subdir').mode.to_s(8)[-3..-1].should == '700'
 end

@@ -1,12 +1,75 @@
 require 'fileutils'
+require 'tempfile'
 
 require './spec/utils'
 require 'global_files_installer/global_files_installer'
 
 describe GlobalFilesInstaller::Installer do
   
+  def install_files_list *files
+    res = files.inject({}) do |res, f|
+      if f.is_a? Hash then res.merge! f
+      else 
+        res[f] = tmpfile f
+        res
+      end
+    end
+  end
+
+  def make_gem_dir to_install, global_install_config = nil
+    if to_install.is_a? Hash
+      global_install_config ||= YAML.dump(to_install)
+      to_install = to_install.keys
+    end
+    mkdirtree ['global_install_config'] + to_install, 'global_install_config' => global_install_config
+  end
+  
+  def gem_path dir = nil, name = nil
+    dir ||= @gem_dir
+    name ||= @gem_name
+    File.join dir, name
+  end
+  
+  def in_gem file
+    File.join @gem_dir, file
+  end
+  
+  def make_install_map files
+    files.inject([]) do |res, f|
+      res << [File.basename(f), f]
+    end
+  end
+  
+# Creates the record hash for the given files
+#
+# by_gem is a hash of the files to record sorted by gem. The keys are the full gem
+# paths (including the directory), while the values are array of either strings
+# or hashes. In the case of hashes, the keys are the destinations, while the values
+# are the origin files, relative to the gem directory. In the case of strings,
+# they're interpreted as the origin files and the destination file is obtained by
+# prepending /tmp/ to it
+# 
+# If yaml is true, the YAML dump of the resulting hash is returned, otherwise the
+# hash itself is returned
+  def create_record by_gem, yaml = false
+    by_file = by_gem.inject({}) do |res, data|
+      gem, files = data
+      gem_dir, gem = gem, File.basename(gem)
+      files = files.map do |f|
+        f.is_a?(Hash) ? f : [tmpfile(f), File.join(gem_dir, f)]
+      end
+      files.each{|f| (res[f[0]] ||= []) << {:gem => gem, :origin => f[1]}}
+      res
+    end
+    yaml ? YAML.dump(by_file) : by_file
+  end
+  
   after do
-    FileUtils.rm_rf @temp_dir if defined? @temp_dir
+    FileUtils.rm_rf @gem_dir if defined? @gem_dir
+  end
+  
+  before do
+    ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] = tmpfile 'global_files_installer_record.yaml'
   end
   
   describe 'when created' do
@@ -22,13 +85,21 @@ describe GlobalFilesInstaller::Installer do
       dir = mkdirtree ['global_install_config'], 'global_install_config' => yaml
       inst = GlobalFilesInstaller::Installer.new dir
       inst.instance_variable_get(:@data).should == exp
-      @temp_dir = dir
+      @gem_dir = dir
     end
     
     it 'does nothing if the global_install_config file doesn\'t exist' do
       dir = mkdirtree []
-      @temp_dir = dir
+      @gem_dir = dir
       lambda{GlobalFilesInstaller::Installer.new dir}.should_not raise_error
+    end
+    
+    it 'does nothing if the global_install_config file is empty' do
+      dir = mkdirtree ['global_install_config']
+      @gem_dir = dir
+      inst = nil
+      lambda{inst = GlobalFilesInstaller::Installer.new dir}.should_not raise_error
+      inst.instance_variable_get(:@data).should == {}
     end
     
   end
@@ -42,19 +113,27 @@ describe GlobalFilesInstaller::Installer do
       end
     end
     
-    context 'The global_install_config file doesn\'t contain ERB tags' do
+    RSpec::Matchers.define :have_installed do |files|
+      match do |inst|
+        files = files.values if files.is_a? Hash
+        @expected_files = files.dup
+        @found_files = files.select{|f| File.exist? f}
+        @expected_files.size == @found_files.size
+      end
+      failure_message_for_should do |inst|
+        installed_msg = @found_files.empty? ? "installed no file" : "only installed #{@found_files.join ', '}"
+        "expected #{inst} to install #{@expected_files.join ', '} but it #{installed_msg}"
+      end
+    end
+    
+    context 'The global_install_config file doesn\'t contain ERB tags' do    
       
       it 'installs the files in the given directories' do
-        tree = %w[global_install_config file1 file2]
-        @files_to_install = {
-          'file1' => File.join(Dir.tmpdir, 'file1'),
-          'file2' => File.join(Dir.tmpdir, 'file2')
-        }
-        @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => YAML.dump(@files_to_install)
-        inst = GlobalFilesInstaller::Installer.new @temp_dir
+        @files_to_install = install_files_list 'file1', 'file2'
+        @gem_dir = make_gem_dir @files_to_install
+        inst = GlobalFilesInstaller::Installer.new @gem_dir
         inst.install_files
-        File.should exist(@files_to_install['file1'])
-        File.should exist(@files_to_install['file2'])
+        inst.should have_installed @files_to_install
       end
       
     end
@@ -62,60 +141,378 @@ describe GlobalFilesInstaller::Installer do
     context 'The global_install_config file contains ERB tags' do
       
       it 'installs the files in the directories obtained by evaluating the ERB tags' do
-        tree = %w[global_install_config file1 file2]
-        @files_to_install = {
-          'file1' => File.join(Dir.tmpdir, 'file1'),
-          'file2' => File.join(Dir.tmpdir, 'file2')
-        }
+        @files_to_install = install_files_list 'file1', 'file2'
         global_install_config = <<-EOS
 file1: <%= require 'tempfile';File.join Dir.tmpdir, 'file1' %>
 file2: /tmp/file2
         EOS
-        @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => global_install_config
-        inst = GlobalFilesInstaller::Installer.new @temp_dir
+        @gem_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => global_install_config
+        inst = GlobalFilesInstaller::Installer.new @gem_dir
         inst.install_files
-        File.should exist(@files_to_install['file1'])
-        File.should exist(@files_to_install['file2'])
+        inst.should have_installed(@files_to_install)
       end
       
     end
     
     it 'skips files which do not exist in the gem directory' do
-#       tree = %w[global_install_config file1 file2]
-      @files_to_install = {
-        'file1' => File.join(Dir.tmpdir, 'file1'),
-        'file2' => File.join(Dir.tmpdir, 'file2')
-      }
-      @temp_dir = mkdirtree %w[global_install_config file2], 'global_install_config' => YAML.dump(@files_to_install)
-      @files_to_install.delete 'file1'
-      inst = GlobalFilesInstaller::Installer.new @temp_dir
+      @files_to_install = install_files_list 'file1'
+      global_install_config = YAML.dump(@files_to_install.merge({'file1' => '/tmp/file1'}))
+      @gem_dir = make_gem_dir @files_to_install, global_install_config
+      inst = GlobalFilesInstaller::Installer.new @gem_dir
       lambda{inst.install_files}.should_not raise_error
-      File.should exist(@files_to_install['file2'])
+      inst.should have_installed(@files_to_install)
     end
     
     it 'creates any needed directories with default permissions' do
-#       tree = %w[global_install_config file1 file2]
-      missing_dir = random_string
-      missing_dir_full = File.join(Dir.tmpdir, missing_dir)
-      missing_subdir = random_string
-      missing_subdir_full = File.join missing_dir_full, missing_subdir
+      missing_dir = tmpfile random_string
+      missing_subdir = File.join missing_dir, random_string
       @files_to_install = {
-        'file1' => File.join(missing_subdir_full, 'file1'),
-        'file2' => File.join(Dir.tmpdir, 'file2')
+        'file1' => File.join(missing_subdir, 'file1'),
+        'file2' => tmpfile('file2')
       }
-      @temp_dir = mkdirtree %w[global_install_config file1 file2], 'global_install_config' => YAML.dump(@files_to_install)
-      inst = GlobalFilesInstaller::Installer.new @temp_dir
+      @gem_dir = make_gem_dir @files_to_install
+      inst = GlobalFilesInstaller::Installer.new @gem_dir
       inst.install_files
-      @files_to_install.each_value do |dest|
-        File.should exist(dest)
-      end
-      @files_to_install = @files_to_install.values + [missing_dir_full]
-      File.should be_directory(missing_dir_full)
-      File::Stat.new(missing_dir_full).mode.to_s(8)[-3..-1].should == '700'
-      File.should be_directory(missing_subdir_full)
-      File::Stat.new(missing_subdir_full).mode.to_s(8)[-3..-1].should == '700'
+      installed = @files_to_install
+      # We have to add the missing_dir_full to the @files_to_install variable so
+      # it gets removed in the after step
+      @files_to_install = @files_to_install.values << missing_dir
+      inst.should have_installed(installed)
+      [missing_dir, missing_subdir].each{|d| File.should be_directory(missing_dir)}
     end
 
+    it 'calls the #record_installed_files method' do
+      @files_to_install = install_files_list 'file1', 'file2'
+      @gem_dir = make_gem_dir @files_to_install
+      inst = GlobalFilesInstaller::Installer.new @gem_dir
+      exp = @files_to_install.inject([]) do |res, data|
+        res << [File.join(@gem_dir, data[0]), data[1]]
+      end
+      inst.should_receive(:record_installed_files).once.with(exp)
+      inst.install_files
+    end
+
+  end
+  
+  describe 'when recording installed files' do
+    
+    def make_fake_gem
+      @gem_name = random_string+'-0.2.3'
+      @gem_dir = tmpfile @gem_name
+      FileUtils.mkdir @gem_dir
+    end
+    
+    before do
+      @record_file = tmpfile random_string
+      FileUtils.rm_f @record_file #ensure the file doesn't exist
+      ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] = @record_file
+      
+      make_fake_gem
+      @inst = GlobalFilesInstaller::Installer.new @gem_dir
+      @files = %w[file1 file2].map{|f| tmpfile f}
+      @install_map = make_install_map @files
+    end
+    
+    after do
+      FileUtils.rm_f @record_file
+      FileUtils.rm_rf @gem_dir
+    end
+
+    context 'The file ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] doesn\'t exist' do
+      
+      it 'creates the record file file and write a hash of the files sorted by gems and one of the gems sorted by file in YAML format' do
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @inst.send :record_installed_files, @files.map{|f| [File.basename(f), f]}
+        exp = create_record @gem_dir => %w[file1 file2]
+        YAML.load(File.read(@record_file)).should == exp
+      end
+        
+    end
+    
+    context 'The file ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] already exists' do
+      
+      context 'and it\'s a valid record file' do
+        
+        before do
+          @previous = create_record '/tmp/gem1-0.0.1' => %w[a b], '/tmp/gem2-2.4.9' => %w[a c]
+          File.open(@record_file, 'w'){|f| YAML.dump @previous, f}
+        end
+        
+        context 'and no other gem owns the same files' do
+          
+          it 'adds entries for the new gem and the new files to the hash' do
+            @inst.send :record_installed_files, @install_map
+            exp = Marshal.load Marshal.dump(@previous)
+            exp.merge!( {'/tmp/file1' => [{:gem => @gem_name, :origin => in_gem('file1')}], '/tmp/file2' => [{:gem => @gem_name, :origin => in_gem('file2')}]})
+            YAML.load(File.read(@record_file)).should == exp
+          end
+          
+        end
+        
+        context 'and other gems own the same files' do
+          
+          it 'adds the new gem to the existing ones' do
+            @files = %w[/tmp/a /tmp/c /tmp/file1]
+            @install_map = make_install_map @files
+            @inst.send :record_installed_files, @install_map
+            exp = Marshal.load Marshal.dump(@previous)
+            exp.merge!( { '/tmp/file1' => [{:gem => @gem_name, :origin => in_gem('file1')}]})
+            exp['/tmp/a'] << {:gem => @gem_name, :origin => in_gem('a')}
+            exp['/tmp/c'] << {:gem => @gem_name, :origin => in_gem('c')}
+            YAML.load(File.read(@record_file)).should == exp
+          end
+          
+        end
+        
+        context 'and it isn\'t a valid record file' do
+          
+          after do
+            @to_remove.each{|f| FileUtils.rm_rf f} if defined? @to_remove
+          end
+          
+          def record_file str
+            File.open(@record_file, 'w'){|f| f.write str}
+          end
+          
+          before do
+            @backup_file = @record_file + '-1'
+            @to_remove = [@backup_file]
+          end
+
+          
+          context 'because it isn\'t a valid YAML file' do
+
+            it 'displays a warning and renames the original file appending a progressive number to it' do
+              record_file "by_file: {"
+              @inst.should_receive(:warn).once.with("The file #{@record_file} isn't a valid record file and will be moved to #{@backup_file}")
+              @inst.send :record_installed_files, @install_map
+              exp = create_record @gem_dir => %w[file1 file2]
+              YAML.load(File.read(@record_file)).should == exp
+              File.should exist(@backup_file)
+              File.read(@backup_file).should == 'by_file: {'
+            end
+            
+          end
+          
+          context 'because it doesn\'t contain the correct objects' do
+            
+            it 'displays a warning and renames the original file appending a progressive number to it' do
+              record_file "a string"
+              @inst.should_receive(:warn).once.with("The file #{@record_file} isn't a valid record file and will be moved to #{@backup_file}")
+              @inst.send :record_installed_files, @install_map
+              exp = create_record @gem_dir => %w[file1 file2]
+              YAML.load(File.read(@record_file)).should == exp
+              File.should exist(@backup_file)
+              File.read(@backup_file).should == 'a string'
+            end
+            
+          end
+          
+          it 'uses a number which produces a unique filename' do
+            @backup_file = @record_file + '-3'
+            @to_remove = [@backup_file, @record_file + '-1', @record_file + '-2']
+            record_file "by_file: {"
+            (1..2).each{|n| `touch #{@record_file}-#{n}`}
+            @inst.should_receive(:warn).once.with("The file #{@record_file} isn't a valid record file and will be moved to #{@backup_file}")
+            @inst.send :record_installed_files, @install_map
+            exp = create_record @gem_dir => %w[file1 file2]
+            YAML.load(File.read(@record_file)).should == exp
+            File.should exist(@backup_file)
+            (1..2).each{|n| File.should exist(@record_file + "-#{n}")}
+            File.read(@backup_file).should == 'by_file: {'
+          end
+          
+        end
+          
+      end
+      
+    end
+    
+    context 'when the GLOBAL_FILES_INSTALLER_RECORD_FILE environment variable isn\'t set' do
+      
+      before do
+        ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = nil
+        @default_record_file = '/var/lib/global_files_installer/installed_files'
+      end
+    
+      it 'uses /var/lib/global_files_installer/installed_files as default record file' do
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@default_record_file, 'w').once
+        File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return true
+        @inst.send :record_installed_files, @install_map
+        file.close
+      end
+      
+      it 'creates any missing directories in the path ' do
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return false
+        FileUtils.should_receive(:mkdir_p).with('/var/lib/global_files_installer').once
+        File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@default_record_file, 'w').once
+        @inst.send :record_installed_files, @files
+        file.close
+      end
+      
+    end
+    
+  end
+  
+  describe 'when uninstalling files' do
+    
+    RSpec::Matchers.define :have_uninstalled do |files|
+      match do |inst|
+        files = files.values if files.is_a? Hash
+        @expected_files = files.dup
+        @uninstalled_files = files.select{|f| !File.exist? f}
+        @expected_files.size == @found_files.size
+      end
+      failure_message_for_should do |inst|
+        installed_msg = @uninstalled_files.empty? ? "Uninstalled no file" : "only uninstalled #{@uninstalled_files.join ', '}"
+        "expected #{inst} to uninstall #{@expected_files.join ', '} but it #{installed_msg}"
+      end
+    end
+    
+    def make_fake_gem
+      @gem_name = random_string+'-0.2.3'
+      @gem_dir = tmpfile @gem_name
+      FileUtils.mkdir @gem_dir
+    end
+    
+    def write_record_file arg = nil
+      File.open(@record_file, 'w') do |f| 
+        if arg.is_a? String then f.write arg
+        else f.write create_record(arg || {@gem_dir => @files.map{|f| File.basename(f)}}, true)
+        end
+      end
+    end
+    
+    def create_files files = nil
+      (files || @files).each{|f| `touch #{f}`}
+    end
+    
+    after do
+      # We can't use rm_f because this clashes with the expecations set in the
+      # examples
+      FileUtils.rm @record_file if File.exist? @record_file
+      FileUtils.rm_rf @gem_dir
+    end
+    
+    before do
+      @record_file = tmpfile random_string
+      FileUtils.rm_f @record_file #ensure the file doesn't exist
+      ENV["GLOBAL_FILES_INSTALLER_RECORD_FILE"] = @record_file
+      
+      make_fake_gem
+      @inst = GlobalFilesInstaller::Installer.new @gem_dir
+      @files = %w[file1 file2].map{|f| tmpfile f}
+      @install_map = make_install_map @files
+    end
+    
+    it 'does nothing if the record file doesn\'t exist' do
+      FileUtils.should_receive(:rm_f).never
+      @inst.uninstall_files
+    end
+    
+    it 'does nothing if the record file is invalid' do
+      write_record_file 'invalid record file contents'
+      FileUtils.should_receive(:rm_f).never
+      @inst.uninstall_files
+      write_record_file 'invalid YAML file: {'
+      @inst.uninstall_files
+    end
+    
+    it 'removes all files listed in the record file as belonging to the gem' do
+      write_record_file
+      @files.each{|f| FileUtils.should_receive(:rm_f).with(f).once}
+      @inst.uninstall_files
+    end
+   
+    it 'doesn\'t remove a file if the gem isn\'t the last listed in the record file for it' do
+      other_gem = '/tmp/other_gem-1.5.7'
+      record = {
+        @files[0] => [{:gem => @gem_name, :origin => in_gem(File.basename(@files[0]))}, {:gem => other_gem, :origin => File.join(other_gem, File.basename(@files[0]))}],
+        @files[1] => [{:gem => @gem_name, :origin => in_gem(File.basename(@files[1]))}]
+      }
+      write_record_file YAML.dump(record)
+      FileUtils.should_receive(:rm_f).with(@files[0]).never
+      FileUtils.should_receive(:rm_f).with(@files[1]).once
+      @inst.uninstall_files
+    end
+    
+    it 'removes itself from the record file' do
+      other_gem = '/tmp/other_gem-1.5.7'
+      record = {
+        @files[0] => [{:gem => @gem_name, :origin => in_gem(File.basename(@files[0]))}, {:gem => other_gem, :origin => File.join(other_gem, File.basename(@files[0]))}],
+        @files[1] => [{:gem => @gem_name, :origin => in_gem(File.basename(@files[1]))}]
+      }
+      write_record_file YAML.dump(record)
+      FileUtils.should_receive(:rm_f).with(@files[0]).never
+      FileUtils.should_receive(:rm_f).with(@files[1]).once
+      @inst.uninstall_files
+      exp = {
+        @files[0] => [{:gem => other_gem, :origin => File.join(other_gem, File.basename(@files[0]))}]
+      }
+      new_record = YAML.load File.read(@record_file)
+      new_record.should == exp
+    end
+    
+    def make_record gems, gem_order
+      res = {}
+      gems.each_pair do |gem, files|
+        gem_name = File.basename gem
+        files.each do |f|
+          tmp = tmpfile f
+          (res[tmp] ||= []) << {:gem => gem_name, :origin => File.join(gem, f)}
+        end
+      end
+      res.each_value do |v|
+        v.sort!{|i, j| gem_order.index(i[:gem]) <=> gem_order.index(j[:gem])}
+      end
+      res
+    end
+    
+    it 'copy the file provided by the previous gem owning it' do
+      File.stub(:exist? => true)
+      gems = %w[/tmp/gem1-1.5.7 /tmp/gem2-2.4.0 /tmp/gem3-0.2.1]
+      gem_names = gems.map{|g| File.basename g}
+      @rel_files = @files.map{|f| File.basename f}
+      files = {@gem_dir => @rel_files, gems[0] => [@rel_files[0], @rel_files[1]], gems[1] => [@rel_files[1], tmpfile('file3')], gems[2] => [@rel_files[1]]}
+      record = make_record( files, [gem_names[0], gem_names[1], @gem_name, gem_names[2]])
+      write_record_file YAML.dump(record)
+      FileUtils.should_receive(:cp).with(File.join(gems[0], @rel_files[0]), @files[0]).once
+      @inst.uninstall_files
+    end
+    
+     it 'skips any non-existing files when copying uninstalled files' do
+      @files.delete_at 1
+      gems = %w[/tmp/gem1-1.5.7 /tmp/gem2-2.4.0]
+      gems.each do |g|
+        FileUtils.rm_rf g
+        FileUtils.mkdir g
+      end
+      gem_names = gems.map{|g| File.basename g}
+      @rel_files = @files.map{|f| File.basename f}
+      files = {@gem_dir => @rel_files, gems[0] => [@rel_files[0]], gems[1] => [@rel_files[0]]}
+      files.each_pair do |k, v|
+        next if k == @gem_dir
+        v.each{|f| `touch #{File.join k, f}`}
+      end
+      FileUtils.rm File.join(gems[1], @rel_files[0])
+      record = make_record( files, [gem_names[0], gem_names[1], @gem_name])
+      write_record_file YAML.dump(record)
+      @inst.stub(:read_record_file => record)
+      FileUtils.should_receive(:cp).with(File.join(gems[1], @rel_files[0]), @files[0]).never
+      FileUtils.should_receive(:cp).with(File.join(gems[0], @rel_files[0]), @files[0]).once
+      @inst.uninstall_files
+     end
+    
   end
   
 end

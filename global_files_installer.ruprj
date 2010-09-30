@@ -10,8 +10,12 @@
     - "*.rb"
     - "*.feature"
     - "*.gemspec"
+    - Rakefile
 :rspec: 
+  :full_backtraces: false
   :ruby_options: []
 
+:rake: 
+  :rakefile: Rakefile
 :ruby: 
   :main_program: bin/global_install_files

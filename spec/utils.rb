@@ -90,4 +90,6 @@ def mkdirtree tree, contents = {}, base = Dir.tmpdir
   temp_dir
 end
 
-# RSpec::Matchers.define 
+def tmpfile *args
+  File.join Dir.tmpdir, *args
+end
