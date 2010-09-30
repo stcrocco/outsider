@@ -1,2 +1,3 @@
 *.ruses
 *.ruusr
+/doc/
