@@ -16,12 +16,15 @@ describe GlobalFilesInstaller::Installer do
     end
   end
 
-  def make_gem_dir to_install, global_install_config = nil
+  def make_gem_dir to_install, global_install_config = nil, base_dir = nil
     if to_install.is_a? Hash
       global_install_config ||= YAML.dump(to_install)
       to_install = to_install.keys
     end
-    mkdirtree ['global_install_config'] + to_install, 'global_install_config' => global_install_config
+    if base_dir
+      mkdirtree ['global_install_config'] + to_install, {'global_install_config' => global_install_config}, base_dir
+    else mkdirtree ['global_install_config'] + to_install, 'global_install_config' => global_install_config
+    end
   end
   
   def gem_path dir = nil, name = nil
@@ -154,6 +157,19 @@ file2: /tmp/file2
       
     end
     
+    context 'The entry corresponding to the file is an array' do
+      
+      it 'install the files in the path contained in position 0 in the array' do
+        data = {'file1' => %w[/tmp/file1 /other/path/file1]}
+        @files_to_install = {'file1' => '/tmp/file1'}
+        @gem_dir = make_gem_dir @files_to_install, YAML.dump(@files_to_install)
+        inst = GlobalFilesInstaller::Installer.new @gem_dir
+        inst.install_files
+        inst.should have_installed(@files_to_install)
+      end
+      
+    end
+    
     it 'skips files which do not exist in the gem directory' do
       @files_to_install = install_files_list 'file1'
       global_install_config = YAML.dump(@files_to_install.merge({'file1' => '/tmp/file1'}))
@@ -191,14 +207,107 @@ file2: /tmp/file2
       inst.should_receive(:record_installed_files).once.with(exp)
       inst.install_files
     end
+    
+    context 'when doing a user install' do
+      
+      before do
+        @home = tmpfile random_string
+        ENV['HOME'] = @home
+        FileUtils.mkdir @home
+      end
+      
+      after do
+        FileUtils.rm_rf @home
+      end
+      
+      context 'the entry associated with the file in the file list is an array with two entries' do
+        
+        it 'installs the file in the second entry of the array (relative to the user\'s home directory) if that entry is a relative path' do
+          @files_to_install = [File.join(@home, 'destination/path/file1')]
+          @gem_dir = make_gem_dir ['file1'], YAML.dump('file1' => %w[/usr/some/path/file1 destination/path/file1]), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+        it 'installs the file in the second entry of the array if that entry is an absolute path' do
+          @files_to_install = [File.join(@home, 'destination/path/file1')]
+          @gem_dir = make_gem_dir ['file1'], YAML.dump('file1' => %W[/usr/some/path/file1 #{File.join @home, 'destination/path/file1'}]), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+      end
+      
+      context 'the entry associated with the file in the file list is a string' do
+        
+        it 'installs the file under ENV["HOME"]/.local/share if the installation directory is a subdirectory of /usr/share or /usr/local/share' do
+          @original_dest = %w[/usr/share/file1 /usr/local/share/file2]
+          @files_to_install = %w[.local/share/file1 .local/share/file2].map{|f| File.join @home, f}
+          config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
+          @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+        it 'installs the file under ENV["HOME"]/bin if the installation directory is a subdirectory of /bin, /sbin or /usr/sbin' do
+          @original_dest = %w[/bin/file1 /sbin/file2 /usr/sbin/file3]
+          @files_to_install = @original_dest.map{|f| File.join @home, 'bin', File.basename(f)}
+          config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
+          @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+        it 'installs the file in the home directory if the installation directory starts with /usr, /usr/local, /etc, /var or /opt' do
+          @original_dest = %w[/usr/file1 /usr/local/file2 /etc/file3 /var/file4 /opt/file5]
+          @files_to_install = @original_dest.map{|f| File.join @home, File.basename(f)}
+          config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
+          @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+        it 'treats the installation path as if relative to the home directory in all other cases' do
+          @original_dest = %w[/xyz/file1 /xyz/local/file2]
+          @files_to_install = @original_dest.map{|f| File.join @home, f}
+          config = @original_dest.inject({}){|res, f| res[File.basename(f)] = f; res}
+          @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+        it 'does any replacements after having processed the ERB tags' do
+          @original_dest = %W[/usr/file1 /usr/share/file2 /xyz/file3 #{File.join @home, 'file4'}]
+          @files_to_install = %w[file1 .local/share/file2 xyz/file3 file4].map{|f| File.join @home, f}
+          config = {
+            'file1' => '<%="/usr/"%>file1',
+            'file2' => '<%="/usr/share/"%>file2',
+            'file3' => '<%="/x"+"y"+"z"%>/file3',
+            'file4' => ['/usr/file4', '<%=ENV["HOME"]%>/file4' ]
+            }
+          @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
+          inst = GlobalFilesInstaller::Installer.new @gem_dir
+          inst.install_files
+          inst.should have_installed @files_to_install
+        end
+        
+      end
+
+    end
 
   end
   
   describe 'when recording installed files' do
     
-    def make_fake_gem
+    def make_fake_gem gem_dir = nil
       @gem_name = random_string+'-0.2.3'
-      @gem_dir = tmpfile @gem_name
+      @gem_dir = gem_dir || tmpfile( @gem_name)
       FileUtils.mkdir @gem_dir
     end
     
@@ -334,8 +443,24 @@ file2: /tmp/file2
         ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = nil
         @default_record_file = '/var/lib/global_files_installer/installed_files'
       end
+      
+      it 'uses the value stored in the /etc/global_files_installer.conf file, if it exists' do
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        @record_file = tmpfile random_string
+        File.should_receive(:exist?).with('/etc/global_files_installer.conf').once.and_return true
+        File.should_receive(:read).with('/etc/global_files_installer.conf').once.and_return @record_file
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:read).with(@record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@record_file, 'w').once
+        File.should_receive(:directory?).with(File.dirname(@record_file)).once.and_return true
+        @inst.send :record_installed_files, @install_map
+        file.close
+      end
     
-      it 'uses /var/lib/global_files_installer/installed_files as default record file' do
+      it 'uses /var/lib/global_files_installer/installed_files as default record file if the /etc/global_files_installer.conf file doesn\'t exist' do
+        File.should_receive(:exist?).with('/etc/global_files_installer.conf').and_return(false)
         @inst = GlobalFilesInstaller::Installer.new @gem_dir
         mock_file_name = tmpfile random_string
         @files_to_install = [mock_file_name]
@@ -343,6 +468,21 @@ file2: /tmp/file2
         file = File.open(mock_file_name, 'w')
         File.should_receive(:open).with(@default_record_file, 'w').once
         File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return true
+        @inst.send :record_installed_files, @install_map
+        file.close
+      end
+      
+      it 'uses /var/lib/global_files_installer/installed_files as default record file if the /etc/global_files_installer.conf file is empty' do
+
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@default_record_file, 'w').once
+        File.should_receive(:directory?).with('/var/lib/global_files_installer').once.and_return true
+        File.should_receive(:exist?).with('/etc/global_files_installer.conf').and_return(true)
+        File.should_receive(:read).with('/etc/global_files_installer.conf').once.and_return ''
         @inst.send :record_installed_files, @install_map
         file.close
       end
@@ -357,6 +497,64 @@ file2: /tmp/file2
         file = File.open(mock_file_name, 'w')
         File.should_receive(:open).with(@default_record_file, 'w').once
         @inst.send :record_installed_files, @files
+        file.close
+      end
+      
+    end
+    
+    context 'when doing a user install' do
+      
+      before do
+        @home = tmpfile random_string
+        ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = nil
+        ENV['HOME'] = @home
+        FileUtils.rm_rf @home
+        FileUtils.mkdir @home
+        @default_record_file = "#{ENV['HOME']}/.global_files_installer/installed_files"
+      end
+      
+      after do
+        FileUtils.rm_rf @home
+      end
+      
+      it 'uses ENV["HOME"]/.global_files_installer/installed_files as record file if the GLOBAL_FILES_INSTALLER_RECORD_FILE environment variable is not set' do
+        make_fake_gem File.join( @home, random_string + '-1.2.3')
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@default_record_file, 'w').once
+        File.should_receive(:directory?).with(File.dirname(@default_record_file)).once.and_return true
+        @inst.send :record_installed_files, @install_map
+        file.close
+      end
+      
+      it 'uses ENV["HOME"]/.global_files_installer/installed_files as record file even if the GLOBAL_FILES_INSTALLER_RECORD_FILE environment variable is set' do
+        ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] = tmpfile random_string
+        make_fake_gem File.join( @home, random_string + '-1.2.3')
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@default_record_file, 'w').once
+        File.should_receive(:directory?).with(File.dirname(@default_record_file)).once.and_return true
+        @inst.send :record_installed_files, @install_map
+        file.close
+      end
+      
+      it 'doesn\'t attempt to read /etc/global_files_installer.conf' do
+        make_fake_gem File.join( @home, random_string + '-1.2.3')
+        @inst = GlobalFilesInstaller::Installer.new @gem_dir
+        mock_file_name = tmpfile random_string
+        @files_to_install = [mock_file_name]
+        File.should_receive(:exist?).with('/etc/global_files_installer.conf').never
+        File.should_receive(:read).with(@default_record_file).once.and_return YAML.dump({})
+        file = File.open(mock_file_name, 'w')
+        File.should_receive(:open).with(@default_record_file, 'w').once
+        File.should_receive(:directory?).with(File.dirname(@default_record_file)).once.and_return true
+        @inst.send :record_installed_files, @install_map
         file.close
       end
       

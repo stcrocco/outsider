@@ -7,6 +7,8 @@ module GlobalFilesInstaller
   
   class Installer
     
+    # The path of the record file to use if the +GLOBAL_FILES_INSTALLER_RECORD_FILE+
+    # environment variable is unset
     DEFAULT_RECORD_FILE = File.join '/', 'var', 'lib', 'global_files_installer', 'installed_files'
     
     class InvalidRecordFile < StandardError
@@ -25,6 +27,7 @@ module GlobalFilesInstaller
 # files to install
     def initialize dir
       @gem_dir = dir
+      @user_install = dir.start_with? ENV['HOME']
       @data = begin 
         YAML.load File.read(File.join(dir, 'global_install_config'))
       rescue SystemCallError
@@ -42,7 +45,7 @@ module GlobalFilesInstaller
     def install_files
       installed_files = []
       @data.each_pair do |k, v|
-        dest = ERB.new(v).result
+        dest = install_destination v
         orig = File.join(@gem_dir, k)
         installed_files << [orig, dest] if install_file orig, dest
       end
@@ -50,9 +53,20 @@ module GlobalFilesInstaller
       nil
     end
     
+# Uninstalls the files associated with the gem in the current directory
+# 
+# If any of those file is owned also by other gems (including by other versions
+# of the same gem), then the files are only uninstalled if the gem is the last to
+# have been installed. In this case, the file belonging to the previously installed
+# gem is copied. If that file doesn't exist, then the one previous to it is tried,
+# and so on.
+# 
+# The record is updated to remove all mentions of the gem being uninstalled
+# 
+# Returns *nil*
     def uninstall_files
-      record_file = ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] || DEFAULT_RECORD_FILE
-      files = begin read_record_file record_file
+      rec_file = record_file
+      files = begin read_record_file rec_file
       rescue InvalidRecordFile then nil
       end
       return unless files
@@ -71,10 +85,80 @@ module GlobalFilesInstaller
         data.delete gem_data
       end
       files.delete_if{|k, v| v.empty?}
-      write_record_file record_file, files
+      write_record_file rec_file, files
+      nil
     end
     
     private
+    
+    # The path of the record file
+    # 
+    # In case of a user install, the file is always <tt>ENV['HOME']/.global_files_installer/installed_files</tt>.
+    # In case of a global install, instead, the following algorithm is used:
+    # * if the +GLOBAL_FILES_INSTALLER_RECORD_FILE+ environment variable is set,
+    #   its value is used
+    # * otherwise, if the file /etc/global_files_installer.conf exists and isn't
+    #   empty, the name of the record file is read from there
+    # * if all the above fails, then DEFAULT_RECORD_FILE is used
+    # 
+    # Returns the name of the record file to use 
+    def record_file
+      if @user_install then File.join ENV["HOME"], '.global_files_installer', 'installed_files'
+      elsif ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] then ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE']
+      elsif File.exist?('/etc/global_files_installer.conf')
+        file = File.read '/etc/global_files_installer.conf'
+        file.empty? ? DEFAULT_RECORD_FILE : file
+      else DEFAULT_RECORD_FILE
+      end
+    end
+
+    # Creates the installation path for an entry in the +global_install_config+ file
+    # 
+    # _data_ is the entry and can be a string or an array with two elements. If
+    # doing a global install, then the destination file is found simply by passing the
+    # string or the first entry of the array through ERB.
+    # 
+    # In case of a user install, things are a bit more complex and change depending
+    # on whether _data_ is an array or a string
+    # * if it is an array, then the second entry will be used as path, after passing
+    #   it through ERB. If it isn't an absolute file, it'll be considered relative
+    #   to the user's home page.
+    # * if it is a string, what ERB returns will be considered a path relative to the user's
+    #   home directory. There are a few exceptions, however. If the path starts
+    #   with /usr/, /usr/local/, /var/, /opt/ or /etc/ then that directory will be
+    #   replaced with the home directory. If it starts with /usr/share or /usr/local/share,
+    #   that directory will be replaced with <tt>ENV["HOME"]/.local/share</tt>.
+    #   If it starts with /bin/, /sbin/ or /usr/sbin/, that directory will be 
+    #   replaced by <tt>ENV["HOME"]/bin</tt>.
+    #   
+    # Returns the destination path
+    def install_destination data
+      home = ENV['HOME']
+      if data.is_a? Array then path = data[@user_install ? 1 : 0]
+      else path = data
+      end
+      path = ERB.new(path).result
+      if @user_install and data.is_a? Array
+        Pathname.new(path).absolute? ? path : File.join(home, path)
+      elsif @user_install
+        replacements = [
+          [%r{^/bin/}, File.join(home, 'bin')],
+          [%r{^/sbin/}, File.join(home, 'bin')],
+          [%r{^/usr/sbin/}, File.join(home, 'bin')],
+          [%r{^/usr/local/share/}, File.join(home, '.local', 'share')],
+          [%r{^/usr/share/}, File.join(home, '.local', 'share')],
+          [%r{^/usr/local/}, home],
+          [%r{^/usr/}, home],
+          [%r[^/var/], home],
+          [%r[^/opt/], home],
+          [%r[^/etc/], home],
+          [%r{^(?=.)}, home]
+        ]
+        match = replacements.find{|reg, _| path.match reg}
+        File.join match[1], path.sub(match[0], '')
+      else path
+      end
+    end
     
 # Copies the file _orig_ to _dest_
 # 
@@ -116,18 +200,18 @@ module GlobalFilesInstaller
 # 
 # Returns *nil*
     def record_installed_files files
-      record_file = ENV['GLOBAL_FILES_INSTALLER_RECORD_FILE'] || DEFAULT_RECORD_FILE
+      file = record_file
       begin 
-        data = read_record_file record_file
+        data = read_record_file file
         data ||= {}
       rescue InvalidRecordFile 
-        data = rename_invalid_record_file record_file
+        data = rename_invalid_record_file file
         retry
       end
       files.each do |f| 
         (data[f[1]] ||= []) << {:gem => @gem_name, :origin => File.join(@gem_dir, f[0])}
       end
-      write_record_file record_file, data
+      write_record_file file, data
       nil
     end
     
