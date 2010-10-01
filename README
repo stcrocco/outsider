@@ -1,0 +1,160 @@
+==Introduction
+Outsider is a rubygems plugin which allows a gem to install files outside its own directory.
+
+===History
+Outsider was born because an application I am developing needed to install icons and desktop
+files in a system wide directory (such as <tt>/usr/share</tt>) to correctly integrate
+with the desktop environment. Since (as far as I know) rubygems doesn't offer this
+possibility, but I definitly wanted the user to install my application using a
+simple <tt>gem install</tt> command, rather than using a more complicated build
+system, I decided to write a general rubygems plugin allowing this.
+
+===Features
+* Allows a gem developer to specify which files should be installed system-wide,
+  and where exactly to install them, in a YAML file called outsider_files
+  placed in the top level directory of the gem
+* Missing directories in the installation path are created automatically
+* Allows ERB tags in the installation paths, so that they can be tailored on the
+  user's system
+* Automatically detects whether the gem is being installed globally or in the user's
+  home directory. Allows to specify two different installation paths or changes
+  the default installation path so that files are installed in the home directory
+  in case of a user install
+* Automatically handles uninstalls of the files when the gem is installed
+* In case two gems (including multiple versions of the same gem) install a file
+  in the same place, automatically reinstalls the file owned by the older gem when
+  the newer one is installed
+  
+===Drawbacks
+* To find out whether a user or a system-wide install is being performed, Outsider
+  checks whether the gem installation directory is a subdirectory of <tt>ENV['HOME']</tt>.
+  This means that things will break if you have the +GEM_HOME+ environment variable
+  also pointing to a subdirectory of your home directory. This should be a rare
+  situation, however.
+* When multiple gems install a file in the same place, the gem installed last will
+  overwrite the file installed by the other gem, so only the last version of the
+  file will be availlable. This should only be an issue when having different versions
+  of the same gem installed (as different gems shouldn't install the same file).
+  This can lead to problems if an older version of the gem is loaded and if the
+  files installed by different versions of the gem are incompatible.
+* It is only tested on linux. It should work on UNIX-like systems. As it is, I'm
+  almost positive it doesn't work on Windows. Most of the plugin is system-independent,
+  but there will be issues with default paths and user-installs.
+  
+==Usage
+To have Outsider install files outside the gem directory, you need to include in
+the gem sources a file called +outsider_files+ containing a YAML hash. Note that
+both the +outsider_files+ and the files to install should be added to the +source+
+attribute of the gem specification object.
+
+Keys in the hash represent the paths of the files to install relative to the gem directory,
+while entries can be either strings or arrays with two elements. If the entry is
+an array, the first element is the installation path in case of a system-wide install,
+while the second is the the path in case of a user install. In all cases, installation
+paths can contain ERB templates. In the case of a user install, you can specify
+the user's home directory with ~ (but only at the beginning of the file). You *can't*
+use this way to specify another user's home directory, however.
+
+In all cases, if the destination path (after all replacements have been carried out)
+ends with a slash (+/+), the name of the original file (as returned by File.basename)
+is appended to it.
+
+===User installs
+The following algorithm is used to determine the path to install a given file
+in case of user install:
+* if the entry associated with a file is an array, the second value in the array
+  will be used. If it's a relative path (that is, it doesn't start with +/+), then
+  it is assumed to be relative to the home directory. For example, if the second
+  entry of the array is <tt>abc/def.rb</tt>, then the file will be installed in
+  <tt>ENV['HOME']/abc/def.rb</tt>
+* if the entry associated with the file is a string, the path it contains is considered
+  relative to the user's home directory (even if the path is absolute). So, if the
+  path is <tt>/xyz/abc.rb</tt>, it will be installed in <tt>ENV['HOME']/xyz/abc.rb</tt>.
+  However, often this is not what one wants. For example, a file usually installed
+  in <tt>/usr/local/</tt> should be installed directly in <tt>ENV['HOME']</tt>,
+  not in <tt>ENV['HOME']/usr/local</tt>. To avoid this, the following replacements
+  are performed *at the beginning of the string*:
+  * <tt>/bin/</tt> -> <tt>ENV['HOME']/bin</tt>
+  * <tt>/sbin/</tt> -> <tt>ENV['HOME']/bin</tt>
+  * <tt>/usr/sbin/</tt> -> <tt>ENV['HOME']/bin</tt>
+  * <tt>/usr/local/share/</tt> -> <tt>ENV['HOME']/.local/share</tt>
+  * <tt>/usr/share/</tt> -> <tt>ENV['HOME']/.local/share</tt>
+  * <tt>/usr/</tt> -> <tt>ENV['HOME']</tt>
+  * <tt>/usr/local/</tt> -> <tt>ENV['HOME']</tt>
+  * <tt>/var/</tt> -> <tt>ENV['HOME']</tt>
+  * <tt>/opt/</tt> -> <tt>ENV['HOME']</tt>
+  * <tt>/etc/</tt> -> <tt>ENV['HOME']</tt>
+  
+  For example, if the installation path is <tt>/usr/local/share/my_dir/my_file</tt>,
+  in case of a user install the file will be installed in <tt>ENV['HOME']/.local/share/my_dir/my_file</tt>.
+  If you don't want this replacements to be performed, then you need to specify
+  a separate path for the user install (by using an array rather than a string
+  in +outsider_files+).
+
+In all cases, all these operations are carried out *after* having expanded the
+ERB templates.
+
+===Example
+
+This is an example +outsider_files+.
+
+ file1: /usr/share/file1
+ file2: "<%= `kde4-config --path apps`.strip.split(':')[-1]%/file2>"
+ dir/file3: [/usr/file3, "<%=File.join ENV['HOME'], 'dir', 'file3'%>"]
+ file4: [/etc/file4, my_dir/file4]
+ file5: /usr/dir/
+ file6: [/usr/file6, ~/test/file6]
+ 
+In case of a global installation, this produces the following files (note that the
+third entry depends on your system and will break if you dont't have the kde4-config
+program in your PATH):
+* <tt>/usr/share/file1</tt>
+* <tt>/usr/share/applnk/file2</tt>
+* <tt>/usr/file3</tt>
+* <tt>/etc/file4</tt>
+* <tt>/usr/dir/file5</tt>
+* <tt>/usr/file6</tt>
+
+In case of a user install, this is what you'd get (assuming your home directory
+is <tt>/home/your_name</tt>):
+* <tt>/home/your_name/.local/share/file1</tt>
+* <tt>/home/your_name/applnk/file2</tt>
+* <tt>/home/your_name/dir/file3</tt>
+* <tt>/home/your_name/file4</tt>
+* <tt>/home/your_name/file5</tt>
+* <tt>/home/your_name/test/file6</tt>
+
+=== The record file
+To keep track of which files each gem has installed, Outsider uses files called
++record_files+.
+
+A record file contains a list of files installed using Outsider, together with
+the gems which installed them and the _full path_ of the original files from which
+they were installed.
+
+There are two record files, one used to keep trace of files installed during global
+installations and one used for user installations. The latter is always
+<tt>ENV['HOME']/.outsider/installed_files</tt>, while the former is determined
+according to the following algorithm:
+* if the +OUTSIDER_RECORD_FILE+ environment variable is set, the path it contains
+  will be used (this is mainly for testing, you shouldn't use it)
+* if the +OUTSIDER_RECORD_FILE+ environment variable isn't set and the file
+  <tt>/etc/outsider.conf</tt> exists and contains a single filename, then that
+  file will be used
+* otherwise the file <tt>/var/lib/outsider/installed_files</tt> will be used
+
+If a file with the same name as the record file already exists but is not a valid
+record file, a warning will be issued, the file will be renamed and a new record
+file will be created.
+
+If the record file is deleted or becomes broken, already installed files won't
+be uninstalled any more. The next time you install a gem, a new record file will
+be created.
+
+==Author
+Stefano Crocco (stefano.crocco@alice.it)
+
+== License
+Outsider is Copyright © 2010 Stefano Crocco.
+
+Outside is free software and is distributed under the terms of the Ruby license

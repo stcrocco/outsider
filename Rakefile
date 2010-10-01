@@ -1,8 +1,8 @@
 require 'rdoc/task'
 
 RDoc::Task.new do |t|
-  t.rdoc_files.include 'lib/**/*.rb'
-  t.options << '-w2' << '-t' << 'Global Files Installer API'
+  t.rdoc_files.include 'lib/**/*.rb', 'README'
+  t.options << '-w2' << '-t' << 'Outsider API'
   t.rdoc_dir = 'doc'
 end
 

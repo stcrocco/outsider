@@ -170,6 +170,19 @@ file2: /tmp/file2
       
     end
     
+    it 'adds the name of the original file (without directory) if the destination path ends in a / after expanding ERB tags' do
+      @files_to_install = install_files_list 'file2'
+      @files_to_install['file1'] = tmpfile 'my_dir', 'file1'
+      outsider_files = <<-EOS
+      file1: <%= require 'tempfile';File.join Dir.tmpdir, 'my_dir/'%>
+      file2: /tmp/
+      EOS
+      @gem_dir = mkdirtree %w[outsider_files file1 file2], 'outsider_files' => outsider_files
+      inst = Outsider::Installer.new @gem_dir
+      inst.install_files
+      inst.should have_installed(@files_to_install)
+    end
+    
     it 'skips files which do not exist in the gem directory' do
       @files_to_install = install_files_list 'file1'
       outsider_files = YAML.dump(@files_to_install.merge({'file1' => '/tmp/file1'}))
@@ -297,6 +310,19 @@ file2: /tmp/file2
           inst.should have_installed @files_to_install
         end
         
+      end
+      
+      it 'expands the ~ character to the user\'s home directory after processing the ERB tags' do
+        @files_to_install = %w[file1 file2 file3].map{|f| File.join @home, 'test', f}
+        config = {
+          'file1' => '~/<%="test"%>/file1',
+          'file2' => '~/test/file2',
+          'file3' => ['/xyz', '~/test/file3']
+          }
+        @gem_dir = make_gem_dir @files_to_install.map{|f| File.basename(f)}, YAML.dump(config), @home
+        inst = Outsider::Installer.new @gem_dir
+        inst.install_files
+        inst.should have_installed @files_to_install
       end
 
     end

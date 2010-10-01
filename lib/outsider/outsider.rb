@@ -1,19 +1,31 @@
+# Copyright (c) 2010 Stefano Crocco <stefano.crocco@alice.it>
+# Distributed under the terms of the Ruby license
+
 require 'yaml'
 require 'fileutils'
 require 'erb'
 require 'pathname'
 
+# Namespace for the Outsider gem
 module Outsider
   
+  # Class which installs and uninstalls files
   class Installer
     
     # The path of the record file to use if the +OUTSIDER_RECORD_FILE+
     # environment variable is unset
     DEFAULT_RECORD_FILE = File.join '/', 'var', 'lib', 'outsider', 'installed_files'
     
+    # Exception raised when the record file is not a valid record file
     class InvalidRecordFile < StandardError
       
+      # The path of the invalid record file
       attr_reader :file
+      
+      # Creates a new instance
+      # 
+      # _file_ is the name of the invalid record file, while _msg_ is a message
+      # describing why the file is invalid
       def initialize file, msg
         @file = file
         super msg + ": #{@file}"
@@ -21,10 +33,10 @@ module Outsider
       
     end
     
-# Creates a new instance
-# 
-# _dir_ is the directory where to look for the outsider_files file and the
-# files to install
+    # Creates a new instance
+    # 
+    # _dir_ is the directory where to look for the outsider_files file and the
+    # files to install
     def initialize dir
       @gem_dir = dir
       @user_install = dir.start_with? ENV['HOME']
@@ -38,14 +50,15 @@ module Outsider
       @gem_name = File.basename(dir)
     end
     
-# Installs the files according to the instructions in the outsider_files
-# file
-# 
-# Returns *nil*
+    # Installs the files according to the instructions in the outsider_files
+    # file
+    # 
+    # Returns *nil*
     def install_files
       installed_files = []
       @data.each_pair do |k, v|
         dest = install_destination v
+        dest = File.join dest, File.basename(k) if dest.end_with? '/'
         orig = File.join(@gem_dir, k)
         installed_files << [orig, dest] if install_file orig, dest
       end
@@ -53,17 +66,17 @@ module Outsider
       nil
     end
     
-# Uninstalls the files associated with the gem in the current directory
-# 
-# If any of those file is owned also by other gems (including by other versions
-# of the same gem), then the files are only uninstalled if the gem is the last to
-# have been installed. In this case, the file belonging to the previously installed
-# gem is copied. If that file doesn't exist, then the one previous to it is tried,
-# and so on.
-# 
-# The record is updated to remove all mentions of the gem being uninstalled
-# 
-# Returns *nil*
+    # Uninstalls the files associated with the gem in the current directory
+    # 
+    # If any of those file is owned also by other gems (including by other versions
+    # of the same gem), then the files are only uninstalled if the gem is the last to
+    # have been installed. In this case, the file belonging to the previously installed
+    # gem is copied. If that file doesn't exist, then the one previous to it is tried,
+    # and so on.
+    # 
+    # The record is updated to remove all mentions of the gem being uninstalled
+    # 
+    # Returns *nil*
     def uninstall_files
       rec_file = record_file
       files = begin read_record_file rec_file
@@ -139,7 +152,7 @@ module Outsider
       end
       path = ERB.new(path).result
       if @user_install and data.is_a? Array
-        Pathname.new(path).absolute? ? path : File.join(home, path)
+        File.expand_path path, home
       elsif @user_install
         replacements = [
           [%r{^/bin/}, File.join(home, 'bin')],
@@ -152,6 +165,7 @@ module Outsider
           [%r[^/var/], home],
           [%r[^/opt/], home],
           [%r[^/etc/], home],
+          [%r{^~/}, home],
           [%r{^(?=.)}, home]
         ]
         match = replacements.find{|reg, _| path.match reg}

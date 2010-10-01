@@ -1,3 +1,4 @@
 *.ruses
 *.ruusr
 /doc/
+*.swp
