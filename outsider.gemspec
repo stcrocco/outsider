@@ -5,4 +5,5 @@ Gem::Specification.new do |s|
   s.summary = 'rubygems plugin to allow a gem to install files outside its own directory'
   s.files = %w[lib/rubygems_plugin.rb lib/outsider/outsider.rb README.rdoc]
   s.version = '0.0.1'
+  s.homepage = "http://github.com/stcrocco/outsider"
 end
