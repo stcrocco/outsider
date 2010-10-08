@@ -223,7 +223,10 @@ module Outsider
         retry
       end
       files.each do |f| 
-        (data[f[1]] ||= []) << {:gem => @gem_name, :origin => File.join(@gem_dir, f[0])}
+        data[f[1]] ||= []
+        d = data[f[1]]
+        d.reject!{|h| h[:gem] == @gem_name}
+        d << {:gem => @gem_name, :origin => File.join(@gem_dir, f[0])}
       end
       write_record_file file, data
       nil

@@ -397,6 +397,20 @@ file2: /tmp/file2
             YAML.load(File.read(@record_file)).should == exp
           end
           
+          it 'doesn\'t add the new gem to the existing ones if it is already recorded, but moves it at the end instead' do
+            @previous = create_record @gem_dir => %w[a b], '/tmp/gem2-2.4.9' => %w[a c]
+            File.open(@record_file, 'w'){|f| YAML.dump @previous, f}
+            @files = %w[/tmp/a /tmp/c /tmp/file1]
+            @install_map = make_install_map @files
+            @inst.send :record_installed_files, @install_map
+            exp = Marshal.load Marshal.dump(@previous)
+            exp['/tmp/a'].delete_if{|h| h[:gem] == @gem_name }
+            exp['/tmp/a'] << {:gem => @gem_name, :origin => in_gem('a')}
+            exp['/tmp/c'] << {:gem => @gem_name, :origin => in_gem('c')}
+            exp.merge!( { '/tmp/file1' => [{:gem => @gem_name, :origin => in_gem('file1')}]})
+            YAML.load(File.read(@record_file)).should == exp
+          end
+          
         end
         
         context 'and it isn\'t a valid record file' do
