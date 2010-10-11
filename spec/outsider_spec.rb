@@ -651,15 +651,9 @@ Installed file2 to #{@files_to_install['file2']}
     def create_files files = nil
       (files || @files).each{|f| `touch #{f}`}
     end
-    
-    after do
-      # We can't use rm_f because this clashes with the expecations set in the
-      # examples
-      FileUtils.rm @record_file if File.exist? @record_file
-      FileUtils.rm_rf @gem_dir
-    end
-    
+        
     before do
+      $stdout = StringIO.new '', 'r+'
       @record_file = tmpfile random_string
       FileUtils.rm_f @record_file #ensure the file doesn't exist
       ENV["OUTSIDER_RECORD_FILE"] = @record_file
@@ -668,6 +662,14 @@ Installed file2 to #{@files_to_install['file2']}
       @inst = Outsider::Installer.new @gem_dir
       @files = %w[file1 file2].map{|f| tmpfile f}
       @install_map = make_install_map @files
+    end
+    
+    after do
+      $stdout = STDOUT
+      # We can't use rm_f because this clashes with the expecations set in the
+      # examples
+      FileUtils.rm @record_file if File.exist? @record_file
+      FileUtils.rm_rf @gem_dir
     end
     
     it 'does nothing if the record file doesn\'t exist' do
@@ -766,6 +768,34 @@ Installed file2 to #{@files_to_install['file2']}
       FileUtils.should_receive(:cp).with(File.join(gems[1], @rel_files[0]), @files[0]).never
       FileUtils.should_receive(:cp).with(File.join(gems[0], @rel_files[0]), @files[0]).once
       @inst.uninstall_files
+     end
+     
+     it 'displays a message for each uninstalled file' do
+      write_record_file
+      @files.each{|f| FileUtils.stub!(:rm_f)}
+      @inst.uninstall_files
+      exp = <<-EOS
+Uninstalled /tmp/file1
+Uninstalled /tmp/file2
+      EOS
+      $stdout.string.should == exp
+     end
+     
+     it 'displays a message for each replaced file' do
+      File.stub(:exist? => true)
+      FileUtils.stub :cp
+      gems = %w[/tmp/gem1-1.5.7 /tmp/gem2-2.4.0]
+      gem_names = gems.map{|g| File.basename g}
+      @rel_files = @files.map{|f| File.basename f}
+      files = {@gem_dir => @rel_files, gems[0] => [@rel_files[0], @rel_files[1]], gems[1] => [@rel_files[1], tmpfile('file3')]}
+      record = make_record( files, [gem_names[0], gem_names[1], @gem_name])
+      write_record_file YAML.dump(record)
+      @inst.uninstall_files
+      exp = <<-EOS
+Replaced #{tmpfile 'file1'} with #{tmpfile 'gem1-1.5.7', 'file1'}
+Replaced #{tmpfile 'file2'} with #{tmpfile 'gem2-2.4.0', 'file2'}
+      EOS
+      $stdout.string.should == exp
      end
     
   end

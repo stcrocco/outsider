@@ -88,11 +88,12 @@ module Outsider
         next unless gem_data
         if data.last[:gem] == @gem_name
           FileUtils.rm_f f 
-          data[0..-2].reverse_each do |d|
-            if File.exist? d[:origin]
-              FileUtils.cp d[:origin], f 
-              break
-            end
+          replacement = data[0..-2].reverse_each.find{|d| File.exist? d[:origin]}
+          if replacement
+            FileUtils.cp replacement[:origin], f 
+            puts "Replaced #{f} with #{replacement[:origin]}"
+          else
+            puts "Uninstalled #{f}"
           end
         end
         data.delete gem_data
