@@ -195,6 +195,7 @@ module Outsider
             end
           end
         end
+        puts "Installed #{orig.sub(%r{^#{Regexp.quote @gem_dir}/}, '')} to #{dest}"
         dest
       else nil
       end

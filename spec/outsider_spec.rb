@@ -109,7 +109,12 @@ describe Outsider::Installer do
   
   describe 'when installing files' do
     
+    before do
+      $stdout = StringIO.new '', 'r+'
+    end
+    
     after do
+      $stdout = STDOUT
       if defined? @files_to_install
         @files_to_install = @files_to_install.values if @files_to_install.is_a? Hash
         @files_to_install.each{|f| FileUtils.rm_rf f}
@@ -325,6 +330,18 @@ file2: /tmp/file2
         inst.should have_installed @files_to_install
       end
 
+    end
+    
+    it 'displays a message for each file being installed' do
+      @files_to_install = install_files_list 'file1', 'file2'
+      @gem_dir = make_gem_dir @files_to_install
+      inst = Outsider::Installer.new @gem_dir
+      inst.install_files
+      exp = <<-EOS
+Installed file1 to #{@files_to_install['file1']}
+Installed file2 to #{@files_to_install['file2']}
+      EOS
+      $stdout.string.should == exp
     end
 
   end
